@@ -17,6 +17,7 @@ import logging
 import re
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,7 +34,7 @@ USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 )
-MAX_PAGES = 60  # safety cap per site
+MAX_PAGES = 100  # safety cap per site (Richtone keeps sold items listed, so it needs ~60+ pages)
 
 log = logging.getLogger("scraper")
 
@@ -91,6 +92,8 @@ PREFIX_RE = re.compile(r"^(second\s*hand|pre-?owned|used)\s+", re.I)
 
 def tidy_title(title: str) -> str:
     title = clean(title)
+    title = re.sub(r"\s*\((pre-?owned|used|second\s*hand)\)", "", title, flags=re.I)
+    title = re.sub(r"\s*-\s*2nd hand(\s*\(\d+\))?", "", title, flags=re.I)
     title = SUFFIX_RE.sub("", title)
     title = PREFIX_RE.sub("", title)
     return title.strip(" -~")
@@ -134,33 +137,44 @@ def guess_brand(title: str) -> str:
 
 def scrape_guitarguitar() -> list[Item]:
     items: list[Item] = []
+    seen: set[str] = set()
     base = "https://www.guitarguitar.co.uk"
-    url: str | None = f"{base}/pre-owned/"
-    pages = 0
-    while url and pages < MAX_PAGES:
-        soup = get_soup(url, delay=2)
-        pages += 1
-        for card in soup.select("a.product[href*='/product/']"):
-            href = urljoin(base, card["href"])
-            m = re.search(r"/product/([^-/]+)--", href)
-            h3 = card.select_one("h3")
-            if not h3:
-                continue
-            brand = clean(h3.strong.get_text()) if h3.strong else ""
-            title = tidy_title(card.get("title") or h3.get_text())
-            img = card.select_one("img")
-            image = (img.get("data-src") or img.get("src") or "") if img else ""
-            pounds = card.select_one(".js-pounds")
-            pennies = card.select_one(".js-pennies")
-            price = parse_price((pounds.get_text() if pounds else "") + (pennies.get_text() if pennies else ""))
-            avail = clean(card.select_one(".availability").get_text()) if card.select_one(".availability") else ""
-            items.append(Item(
-                site="guitarguitar", id=m.group(1) if m else href, title=title, url=href,
-                price=price, brand=brand, image=image.replace("/Content/Images/blank.png", ""),
-                category=categorise(title), in_stock="out of stock" not in avail.lower(),
-            ))
-        nxt = soup.select_one("a.next-page-button[href]")
-        url = urljoin(base, nxt["href"]) if nxt else None
+    sections = {
+        "guitars/electric": "Electric",
+        "guitars/acoustic": "Acoustic",
+        "guitars/bass": "Bass",
+        "amps": "Amps & Cabs",
+        "pedals": "Pedals & Effects",
+    }
+    for section, category in sections.items():
+        url: str | None = f"{base}/pre-owned/{section}/"
+        pages = 0
+        while url and pages < MAX_PAGES:
+            soup = get_soup(url, delay=2)
+            pages += 1
+            for card in soup.select("a.product[href*='/product/']"):
+                href = urljoin(base, card["href"])
+                m = re.search(r"/product/([^-/]+)--", href)
+                pid = m.group(1) if m else href
+                h3 = card.select_one("h3")
+                if not h3 or pid in seen:
+                    continue
+                seen.add(pid)
+                brand = clean(h3.strong.get_text()) if h3.strong else ""
+                title = tidy_title(card.get("title") or h3.get_text())
+                img = card.select_one("img")
+                image = (img.get("data-src") or img.get("src") or "") if img else ""
+                pounds = card.select_one(".js-pounds")
+                pennies = card.select_one(".js-pennies")
+                price = parse_price((pounds.get_text() if pounds else "") + (pennies.get_text() if pennies else ""))
+                avail = clean(card.select_one(".availability").get_text()) if card.select_one(".availability") else ""
+                items.append(Item(
+                    site="guitarguitar", id=pid, title=title, url=href,
+                    price=price, brand=brand, image=image.replace("/Content/Images/blank.png", ""),
+                    category=category, in_stock="out of stock" not in avail.lower(),
+                ))
+            nxt = soup.select_one("a.next-page-button[href]")
+            url = urljoin(base, nxt["href"]) if nxt else None
     return items
 
 
@@ -196,9 +210,10 @@ def scrape_richtone() -> list[Item]:
             price = parse_price(price_el.get_text() if price_el else card.get("data-product-price"))
             src_cat = card.get("data-product-category", "")
             title = tidy_title(card.get("data-name", ""))
+            brand = clean(card.get("data-product-brand"))
             items.append(Item(
                 site="richtone", id=pid, title=title, url=link["href"] if link else "",
-                price=price, brand=clean(card.get("data-product-brand")), image=image,
+                price=price, brand=brand if brand and brand.lower() != "other" else guess_brand(title), image=image,
                 category=categorise(src_cat.split(",")[0], title),
                 in_stock="out of stock" not in card.get_text(" ").lower(),
             ))
@@ -269,12 +284,18 @@ def scrape_andertons() -> list[Item]:
                 log.info("GET %s (browser)", url)
                 page.goto(url, wait_until="domcontentloaded", timeout=60000)
                 try:
-                    page.wait_for_selector("article[data-testid='product-card']", timeout=30000)
+                    # Wait for the main product grid (the carousel renders earlier and doesn't count).
+                    page.wait_for_function(
+                        """() => [...document.querySelectorAll("article[data-testid='product-card']")]
+                                 .some(a => !a.closest('.slick-list, .slick-track, .slick-slider'))""",
+                        timeout=30000)
                 except Exception:
                     log.warning("no product cards on %s", url)
                     break
                 soup = BeautifulSoup(page.content(), "lxml")
-                cards = soup.select("article[data-testid='product-card']")
+                # Skip the recommendation carousel (.slick-list), which shows items from other sections.
+                cards = [c for c in soup.select("article[data-testid='product-card']")
+                         if not c.find_parent(class_=re.compile(r"slick-(list|track|slider)"))]
                 new = 0
                 for card in cards:
                     pid = card.get("data-product-id", "")
@@ -354,6 +375,13 @@ def merge(previous: dict, scraped: dict[str, list[Item]], failed: set[str], now:
         info["last_success"] = now if site in scraped else sites.get(site, {}).get("last_success")
         info["last_error"] = sites.get(site, {}).get("last_error") if site in failed else None
         sites[site] = info
+
+    # Shops spell brands differently ("BOSS" / "Boss"): use the most common spelling for each.
+    spellings: dict[str, Counter] = {}
+    for i in out:
+        spellings.setdefault(i["brand"].lower(), Counter())[i["brand"]] += 1
+    for i in out:
+        i["brand"] = spellings[i["brand"].lower()].most_common(1)[0][0]
 
     out.sort(key=lambda i: i["first_seen"], reverse=True)
     return {"generated_at": now, "sites": sites, "items": out}

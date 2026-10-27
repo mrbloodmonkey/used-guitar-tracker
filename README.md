@@ -44,13 +44,19 @@ python3 -m venv .venv
 python3 -m http.server -d docs 8000                   # then open http://localhost:8000
 ```
 
-## GitHub setup (one-off)
+## Viewing the site
 
-1. Push this repo to GitHub.
-2. **Settings → Pages**: Source = *Deploy from a branch*, Branch = `main`, folder = `/docs`.
-3. **Actions** tab: enable workflows, then run *Scrape used gear* once by hand.
+The GitHub Action refreshes `docs/data/listings.json` in the repo twice a day. To view it:
 
-The site is then at `https://<your-username>.github.io/<repo-name>/`.
+```bash
+git pull
+python3 -m http.server -d docs 8000      # open http://localhost:8000
+```
+
+To host it online with GitHub Pages instead: Pages needs the repo to be **public** (or a
+GitHub Pro account for private repos). Then **Settings → Pages**: Source = *Deploy from a
+branch*, Branch = `main`, folder = `/docs`, and the site is at
+`https://<your-username>.github.io/<repo-name>/`.
 
 > Note: some shops may block requests from GitHub's data-centre IPs. If a shop keeps
 > showing ⚠ on the site, run the scraper from your own machine instead (e.g. a daily
