@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Used Guitar Tracker</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎸</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <div>
+        <h1>Used Guitar Tracker</h1>
+        <p class="sub" id="updated">Loading…</p>
+      </div>
+      <div class="sites" id="siteStatus"></div>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <aside class="filters" id="filters">
+      <div class="field">
+        <input type="search" id="q" placeholder="Search e.g. “Les Paul”, “Telecaster”" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label class="switch"><input type="checkbox" id="mineOnly"> <span>My brands only</span></label>
+        <label class="switch"><input type="checkbox" id="newOnly"> <span>New since last visit</span></label>      </div>
+
+      <div class="field">
+        <h3>Listed within</h3>
+        <select id="age">
+          <option value="0">Any time</option>
+          <option value="1">Last 24 hours</option>
+          <option value="3">Last 3 days</option>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <h3>Price (£)</h3>
+        <div class="row">
+          <input type="number" id="pmin" placeholder="Min" min="0" inputmode="numeric">
+          <input type="number" id="pmax" placeholder="Max" min="0" inputmode="numeric">
+        </div>
+      </div>
+
+      <div class="field">
+        <h3>Type</h3>
+        <div class="chips" id="cats"></div>
+      </div>
+
+      <div class="field">
+        <h3>Shop</h3>
+        <div class="chips" id="shops"></div>
+      </div>
+
+      <div class="field">
+        <h3>Brands <small>☆ to add to My brands</small></h3>
+        <input type="search" id="brandQ" placeholder="Filter brands" autocomplete="off">
+        <ul class="brands" id="brands"></ul>
+      </div>
+
+      <button class="link" id="reset">Reset filters</button>
+    </aside>
+
+    <section>
+      <div class="bar">
+        <span id="count"></span>
+        <button class="filter-toggle" id="filterToggle">Filters</button>
+        <select id="sort" aria-label="Sort">
+          <option value="new">Newest first</option>
+          <option value="price-asc">Price: low to high</option>
+          <option value="price-desc">Price: high to low</option>
+          <option value="drop">Biggest price drop</option>
+          <option value="brand">Brand A–Z</option>
+        </select>
+      </div>
+      <div class="grid" id="grid"></div>
+      <button class="more" id="more" hidden>Show more</button>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
